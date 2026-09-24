@@ -157,7 +157,10 @@ def ensure_app_window_ready(
             continue
         if state and state["frontmost"] and not state["minimized"]:
             rect = tuple(int(value) for value in state["window_rect"])
-            if rect == last_rect:
+            if rect[2] < 400 or rect[3] < 300:
+                stable_count = 0
+                last_rect = None
+            elif rect == last_rect:
                 stable_count += 1
             else:
                 last_rect = rect
