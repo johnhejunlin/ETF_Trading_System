@@ -231,32 +231,39 @@ def get_window_rect(process_name: str) -> tuple[int, int, int, int] | None:
     return x, y, width, height
 
 
-def get_coregraphics_window_id(owner_hint: str, title_hint: str | None) -> int | None:
-    try:
-        output = run_cached_swift_helper("window_list", SWIFT_WINDOWS, [], timeout=10).stdout
-    except (OSError, RuntimeError, subprocess.SubprocessError):
-        return None
-    windows = json.loads(output)
-    candidates = []
-    for window in windows:
-        owner = str(window.get("owner_name", ""))
-        title = str(window.get("window_name", ""))
-        width = float(window.get("width", 0))
-        height = float(window.get("height", 0))
-        if width < 400 or height < 300:
-            continue
-        if owner != owner_hint:
-            continue
-        score = width * height
-        if window.get("is_onscreen"):
-            score *= 2
-        if title_hint and title_hint in title:
-            score *= 2
-        candidates.append((score, int(window["window_id"])))
-    if not candidates:
-        return None
-    candidates.sort(reverse=True)
-    return candidates[0][1]
+def get_coregraphics_window_id(
+    owner_hint: str,
+    title_hint: str | None,
+    *,
+    timeout_seconds: float = 0.0,
+) -> int | None:
+    deadline = time.monotonic() + max(0.0, timeout_seconds)
+    while True:
+        try:
+            output = run_cached_swift_helper("window_list", SWIFT_WINDOWS, [], timeout=10).stdout
+        except (OSError, RuntimeError, subprocess.SubprocessError):
+            return None
+        windows = json.loads(output)
+        candidates = []
+        for window in windows:
+            owner = str(window.get("owner_name", ""))
+            title = str(window.get("window_name", ""))
+            width = float(window.get("width", 0))
+            height = float(window.get("height", 0))
+            if width < 400 or height < 300 or owner != owner_hint:
+                continue
+            score = width * height
+            if window.get("is_onscreen"):
+                score *= 2
+            if title_hint and title_hint in title:
+                score *= 2
+            candidates.append((score, int(window["window_id"])))
+        if candidates:
+            candidates.sort(reverse=True)
+            return candidates[0][1]
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(0.2)
 
 
 def capture_screenshot(path: Path, window_id: int | None, rect: tuple[int, int, int, int] | None) -> str:

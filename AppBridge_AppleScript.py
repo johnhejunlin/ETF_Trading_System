@@ -914,9 +914,13 @@ def capture_ocr(
         process_name=process_name,
         timeout_seconds=APP_READY_TIMEOUT_SECONDS,
     )
-    timings["app_ready_ms"] = round((time.monotonic() - ready_started) * 1000, 1)
     rect = tuple(ready_state["window_rect"])
-    window_id = get_coregraphics_window_id("同花顺", app_name)
+    window_id = get_coregraphics_window_id(
+        process_name,
+        app_name,
+        timeout_seconds=max(0.0, APP_READY_TIMEOUT_SECONDS - (time.monotonic() - ready_started)),
+    )
+    timings["app_ready_ms"] = round((time.monotonic() - ready_started) * 1000, 1)
     if window_id is None:
         raise AppWindowGuardError(f"cannot identify {process_name} CoreGraphics window")
     verify_app_window_state(process_name, expected_rect=rect)
@@ -1964,13 +1968,12 @@ def navigate_to_holdings(
                     "error": str(exc),
                 }
             )
-            # The sidebar's buttons are unnamed AXButtons. OCR identifies the
-            # semantic label, but the action itself remains AXPress.
+            # The sidebar's buttons are unnamed AXButtons; use OCR when it can
+            # see the vertical label, otherwise bind the known slot geometry.
             image_path, items, _ = record("accessibility_failed_state")
             if not is_trade_page(items):
-                # The desktop sidebar's AX buttons are unnamed. Bind the OCR
-                # label to the nearest left-sidebar AX button and press it;
-                # do not rely on a global coordinate click for this control.
+                # Press the nearest left-sidebar AX button; never use a global
+                # coordinate click for this control.
                 trade_match = find_ocr_text(
                     image_path,
                     items,
@@ -1982,17 +1985,22 @@ def navigate_to_holdings(
                     max_rel_y=0.40,
                 )
                 if trade_match is None:
-                    raise RuntimeError("OCR text not found: ['交易']")
-                _, _, trade_x, trade_y = trade_match
-                steps[-1]["trade_navigation_accessibility"] = ax_press_sidebar_button_near_point(
+                    trade_x, trade_y = relative_point(rect, 0.015, 0.344)
+                else:
+                    _, _, trade_x, trade_y = trade_match
+                trade_action = ax_press_sidebar_button_near_point(
                     process_name,
                     trade_x,
                     trade_y,
                 )
+                if trade_match is None:
+                    trade_action["method"] = "accessibility_near_sidebar_geometry"
+                    trade_action["geometry_anchor"] = trade_action.pop("ocr_anchor")
+                steps[-1]["trade_navigation_accessibility"] = trade_action
                 time.sleep(1.0)
                 image_path, items, _ = record("trade_navigation_accessibility")
             if not is_trade_page(items):
-                raise RuntimeError("OCR-anchored AXPress did not reach the trade page")
+                raise RuntimeError("Accessibility sidebar AXPress did not reach the trade page")
 
             if not is_simulation_context(raw_text(items)):
                 try:

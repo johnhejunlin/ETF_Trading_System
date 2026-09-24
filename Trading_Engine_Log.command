@@ -1,6 +1,6 @@
 #!/usr/bin/env zsh
 SCRIPT_DIR="$(cd -- "$(dirname -- "$0")" && pwd -P)"
-PYTHON_BIN="${PYTHON_BIN:-$(command -v python3)}"
+PYTHON_BIN="${PYTHON_BIN:-$SCRIPT_DIR/.venv/bin/python}"
 
 cd "$SCRIPT_DIR" || exit 1
 
